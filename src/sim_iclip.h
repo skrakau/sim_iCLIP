@@ -291,7 +291,6 @@ bool apply_iCLIPmodifications(BamAlignmentRecord &newRecord, BamAlignmentRecord 
     }
 
     // draw crosslink site(s) 
-    // TODO pick multiple crosslink sites for one fragment
     unsigned crosslinkSite = bindingSite.crosslinkSites[0];
     double cumProb = 0;
     for (unsigned i = 0; i < length(bindingSite.crosslinkProbs); ++i) 
@@ -536,6 +535,82 @@ bool process_bamRegion(Stats &stats, TBamOut &outBamFile, TBedOut &outBedFile1, 
         stats.readCount += readCount;
         SEQAN_OMP_PRAGMA(atomic)
         ++stats.bsCount;
+    }
+
+    return true;
+}
+
+
+template <typename TBamOut, typename TBamIn, typename TBai, typename TRng, typename TOptions>
+bool process_bamRegion_subsample(Stats &stats, TBamOut &outBamFile, TBamIn &inFile, TBai &baiIndex, int const& rID, String<double> &fragLengthDistr, TRng &rng, TOptions &options)
+{
+    int jump_beginPos = 0;
+    int jump_endPos = 500000000;    // TODO 
+
+    // Jump the BGZF stream to this position.
+    bool hasAlignments = false;
+    if (!jumpToRegion(inFile, hasAlignments, rID, jump_beginPos, jump_endPos, baiIndex))
+    {
+        std::cerr << "ERROR: Could not jump to " << jump_beginPos << ":" << jump_endPos << "\n";
+        return false;
+    }
+    if (!hasAlignments)
+    {
+        if (options.verbosity > 1) std::cout << "WARNING: no alignments here " << jump_beginPos << ":" << jump_endPos << "\n";
+        return false;  
+    }
+
+    // Seek linearly to the selected position.
+    BamAlignmentRecord bamRecord;
+    BamAlignmentRecord newBamRecord;
+    CharString contigName;
+    unsigned readCount = 0;
+    while (!atEnd(inFile))
+    {
+        readRecord(bamRecord, inFile);
+
+        // If we are on the next reference 
+        if (bamRecord.rID == -1 || bamRecord.rID > rID || !hasFlagAllProper(bamRecord))
+            break;
+
+        unsigned l = options.fragmentSize;
+        if (options.fldFileName != "")
+            l = draw_fragLength(fragLengthDistr, rng, options);
+
+ 
+        if (!hasFlagFirst(bamRecord))
+        {
+            std::cerr << "ERROR: not the first segment! R2 entries should be removed from BAM before. " << "\n";
+            continue;
+        }       
+
+        // downSample corresponding to subsampling rate
+        std::uniform_real_distribution<double> distBA(0.0, 1.0);
+        double x = distBA(rng); 
+        if (x <= bindingSite.subsampleRate)
+        {
+                
+            newRecord = record;
+            unsigned fragEndPos;
+            if (!hasFlagRC(record))
+                fragEndPos = record.beginPos + l;
+            else
+                fragEndPos = record.beginPos + getAlignmentLengthInRef(record) - l;
+
+   
+
+            writeRecord(outBamFile, newBamRecord);
+
+            SEQAN_OMP_PRAGMA(atomic)
+            ++readCount;
+            
+            contigName = getContigName(bamRecord, inFile);
+        }
+    }
+    if (readCount > 0) 
+    {
+        SEQAN_OMP_PRAGMA(atomic)
+        stats.randomReadCount += readCount;
     }
 
     return true;
@@ -819,7 +894,7 @@ bool doIt(TOptions &options)
                 unsigned c = options.noBgCrosslinkSites;
                 if (options.useRnCrosslinkSites)
                 {
-                    std::uniform_int_distribution<unsigned> dist(options.noCrosslinkSites, options.noBgCrosslinkSites); // TODO sim. no of cs based on peak heigth? width?
+                    std::uniform_int_distribution<unsigned> dist(options.noCrosslinkSites, options.noBgCrosslinkSites); 
                     c = dist(rng);
                     c = std::min((bgBindingSites[contigId][i].endPos-bgBindingSites[contigId][i].beginPos), c); // make sure fitting within binding region
                 }
@@ -831,6 +906,11 @@ bool doIt(TOptions &options)
                     ++backgroundStats.uncoveredBsCount;
                 }
             }
+
+            // add random reads from RNA-seq data
+            process_bamRegion_subsample(backgroundStats, outBamFile, inFile, baiIndex, rID, fragLengthDistr, rng, options);
+
+
         }
         if (abort) return 1;
 
