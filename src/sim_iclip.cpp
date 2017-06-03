@@ -81,6 +81,7 @@ struct AppOptions
 
     bool ignoreTargetSites;
     unsigned numThreads;
+    CharString tempPath;
     int verbosity;
 
     AppOptions() :
@@ -104,7 +105,7 @@ struct AppOptions
         bindingAffFactor(1.0/10.0),
         bgTruncationRate(0.6),
         ignoreTargetSites(false),
-        numThreads(8),
+        numThreads(1),
         verbosity(1)
     {}
 };
@@ -145,9 +146,6 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     setValidValues(parser, "out", ".bam");
     setRequired(parser, "out", true);
 
-    // parameters
-    //addOption(parser, ArgParseOption("pd", "pull", "Pull down (if not set, assumes that only pulled down fragments are given)."));
-
     addSection(parser, "Options for simulating target signal");
 
     addOption(parser, ArgParseOption("fld", "fld", "File containing empirical fragment length distr.", ArgParseArgument::OUTPUT_FILE));
@@ -160,7 +158,6 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     setMaxValue(parser, "cs", "6");
     addOption(parser, ArgParseOption("urc", "urc", "Use random number of crosslink sites for each binding site in range [1..cs]."));
     addOption(parser, ArgParseOption("fs", "fs", "Use fragment size (ignored if empirical distribution file is used).", ArgParseArgument::INTEGER));
-    //addOption(parser, ArgParseOption("ubs", "ubs", "Use background binding sites to simulate reads"));
     addOption(parser, ArgParseOption("ba", "ba", "Binding affinity for pull-down. Default: 1.0.", ArgParseArgument::DOUBLE));
     setMinValue(parser, "ba", "0.005");
     setMaxValue(parser, "ba", "1.0");
@@ -185,7 +182,8 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
 
     addSection(parser, "General user options");
 
-    addOption(parser, ArgParseOption("nt", "tn", "Thread number.", ArgParseArgument::INTEGER));
+    addOption(parser, ArgParseOption("nt", "nt", "Thread number.", ArgParseArgument::INTEGER));
+    addOption(parser, ArgParseOption("tmp", "tmp", "Path to directory to store intermediate files. ", ArgParseArgument::STRING));
     addOption(parser, ArgParseOption("q", "quiet", "Set verbosity to a minimum."));
     addOption(parser, ArgParseOption("v", "verbose", "Enable verbose output."));
     addOption(parser, ArgParseOption("vv", "very-verbose", "Enable very verbose output."));
@@ -210,9 +208,6 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     getOptionValue(options.outFileName, parser, "out");
     getOptionValue(options.fldFileName, parser, "fld");
 
-    //if (isSet(parser, "pull"))
-    //    options.pullDown = true;
-
     getOptionValue(options.bindingAffinity, parser, "ba");
     getOptionValue(options.bindingAffFactor, parser, "baf");
 
@@ -228,7 +223,8 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
 
     if (isSet(parser, "its"))
         options.ignoreTargetSites = true;
-    getOptionValue(options.numThreads, parser, "tn");
+    getOptionValue(options.numThreads, parser, "nt");
+    getOptionValue(options.tempPath, parser, "tmp");
     // Extract option values.
     if (isSet(parser, "quiet"))
         options.verbosity = 0;
@@ -259,23 +255,18 @@ int main(int argc, char const ** argv)
               << "===============\n\n";
 
     // Print the command line arguments back to the user.
-    if (options.verbosity > 0)
+    /*if (options.verbosity > 0)
     {
         std::cout << "__OPTIONS____________________________________________________________________\n"
                   << '\n'
                   << "VERBOSITY\t" << options.verbosity << "\n\n";
-    }
+    }*/
 
-/*#if SEQAN_ENABLE_PARALLELISM
-    std::cout << "  SEQAN_ENABLE_PARALLELISM == true " << std::endl;
-#else
-    std::cout << "  SEQAN_ENABLE_PARALLELISM == false " << std::endl;
-#endif*/  
 
 #ifdef _OPENMP
     omp_set_num_threads(options.numThreads);  
     std::cout << " Set number of openMP threads to " <<  options.numThreads << std::endl;
-    std::cout << " Get max. threads " <<  omp_get_max_threads()  << std::endl;
+    //std::cout << " Get max. threads " <<  omp_get_max_threads()  << std::endl;
 #endif
 
 #ifdef SIM_ICLIP_PROFILE

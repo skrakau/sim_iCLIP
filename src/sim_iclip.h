@@ -438,13 +438,10 @@ bool process_bamRegion(Stats &stats, TBamOut &outBamFile, TBedOut &outBedFile1, 
     }
     if (!hasAlignments)
     {
-        std::cout << "WARNING: no alignments here " << jump_beginPos << ":" << jump_endPos << "\n";
+        if (options.verbosity > 1) std::cout << "WARNING: no alignments here " << jump_beginPos << ":" << jump_endPos << "\n";
         return false;  
     }
-    else
-    {
-        std::cout<< "yes, there are alignments here " << jump_beginPos << ":" << jump_endPos << " BS: " << bindingSite.beginPos << " - " << bindingSite.endPos << "\n";
-    }
+
 
     // Seek linearly to the selected position.
     BamAlignmentRecord bamRecord;
@@ -580,20 +577,22 @@ bool parse_fragLengthDistr(String<double> &fragLengthDistr, TOptions &options) {
     return 0;
 }
 
+
 inline
-const char * myTempFileName(std::string const suffix = "")
+const char * myTempFileName(std::string const suffix = "", std::string const tempPath = "")
 {
-    if (mkdir("/scratch/local/krakau", 0777) == -1)
+    if (mkdir(tempPath.c_str(), 0777) == -1)
     {
         if(errno == EEXIST ) {
-            //std::cout << "Directory /scratch/local/krakau already exists " << std::endl;
+            //std::cout << "Directory already exists " << std::endl;
         } else {
-            throw std::runtime_error("ERROR: Could not create directory in /scratch/local/ ");
+            std::cerr << tempPath << std::endl;
+            throw std::runtime_error("ERROR: Could not create directory");
         }
     }
 
     static char fileNameBuffer[1000];
-    strcpy(fileNameBuffer, ("/scratch/local/krakau/SEQAN.XXXXXX" + suffix).c_str());
+    strcpy(fileNameBuffer, (tempPath + "SIM_ICLIP.XXXXXX" + suffix).c_str());
 
     int _tmp = mkstemps(fileNameBuffer, suffix.size());
     if (_tmp == -1)
@@ -602,6 +601,7 @@ const char * myTempFileName(std::string const suffix = "")
     close(_tmp);    
     return fileNameBuffer;
 }
+
 
 inline bool exists_test(const CharString& fileName) {
     std::ifstream f(toCString(fileName));
@@ -649,14 +649,15 @@ bool doIt(TOptions &options)
     bool abort = false;
     if (!options.ignoreTargetSites)
     {
+        std::cout << "  Simulate target signal ..." << std::endl;
 #if SIM_ICLIP_ENABLE_PARALLELISM
-        std::cout << "  ... in parallel " << std::endl;
+        if (options.verbosity > 1) std::cout << "     in parallel ..." << std::endl;
         SEQAN_OMP_PRAGMA(parallel for schedule(dynamic, 1) num_threads(options.numThreads)) 
 #endif  
         for (unsigned contigId = 0; contigId < length(bindingSites); ++contigId)
         {
             // Open BamFileIn for reading.
-            std::cout << "Open Bam and Bai file ... "  << "\n";
+            if (options.verbosity > 1) std::cout << "Open Bam and Bai file ... "  << "\n";
             BamFileIn inFile;
             if (!open(inFile, toCString(options.bamFileName)))
             {
@@ -675,16 +676,22 @@ bool doIt(TOptions &options)
 
             // Temp. fileName
             CharString tempFileName;
-
-            SEQAN_OMP_PRAGMA(critical)
-            /*append(tempFileName, SEQAN_TEMP_FILENAME());
-            std::stringstream ss;
-            ss << contigId;
-            append(tempFileName, ss.str());
-            append(tempFileName, ".bam");*/
-            tempFileName = myTempFileName(".bam");
+            if (empty(options.tempPath))
+            {
+                SEQAN_OMP_PRAGMA(critical)
+                append(tempFileName, SEQAN_TEMP_FILENAME());
+                std::stringstream ss;
+                ss << contigId;
+                append(tempFileName, ss.str());
+                append(tempFileName, ".bam");
+            }
+            else
+            {
+                SEQAN_OMP_PRAGMA(critical)
+                tempFileName = myTempFileName(".bam", toCString(options.tempPath));
+            }
             tempFileNames[contigId] = tempFileName;
-            std::cout << "temp file Name: " << tempFileName << std::endl;
+            if (options.verbosity > 1) std::cout << "temp file Name: " << tempFileName << std::endl;
 
             // Bam output
             BamFileOut outBamFile(context(inFile), toCString(tempFileName));
@@ -740,15 +747,16 @@ bool doIt(TOptions &options)
     resize(bgTempFileNames, length(store.contigStore));
     if (options.useBgBS)    // !empty(options.bbsFileName))
     {
+        std::cout << "  Simulate background signal ..." << std::endl;
         // for each binding site 
 #if SIM_ICLIP_ENABLE_PARALLELISM
-        std::cout << "  ... in parallel " << std::endl;
+        if (options.verbosity > 1) std::cout << "     in parallel ..." << std::endl;
         SEQAN_OMP_PRAGMA(parallel for schedule(dynamic, 1) num_threads(options.numThreads)) 
 #endif  
         for (unsigned contigId = 0; contigId < length(bgBindingSites); ++contigId)
         {
             // Open BamFileIn for reading.
-            std::cout << "Open Bam and Bai file ... "  << "\n";
+            if (options.verbosity > 1) std::cout << "Open Bam and Bai file ... "  << "\n";
             BamFileIn inFile;
             if (!open(inFile, toCString(options.bamFileName)))
             {
@@ -767,16 +775,22 @@ bool doIt(TOptions &options)
 
             // Temp. fileName
             CharString bgTempFileName;
-
-            SEQAN_OMP_PRAGMA(critical)
-            /*append(bgTempFileName, SEQAN_TEMP_FILENAME());
-            std::stringstream ss;
-            ss << contigId;
-            append(bgTempFileName, ss.str());
-            append(bgTempFileName, ".bam");*/
-            bgTempFileName = myTempFileName(".bam");   
+            if (empty(options.tempPath))
+            {
+                SEQAN_OMP_PRAGMA(critical)
+                append(bgTempFileName, SEQAN_TEMP_FILENAME());
+                std::stringstream ss;
+                ss << contigId;
+                append(bgTempFileName, ss.str());
+                append(bgTempFileName, ".bam");
+            }
+            else
+            {
+                SEQAN_OMP_PRAGMA(critical)
+                bgTempFileName = myTempFileName(".bam", toCString(options.tempPath));   
+            }
             bgTempFileNames[contigId] = bgTempFileName;
-            std::cout << "temp file Name: " << bgTempFileName << std::endl;
+            if (options.verbosity > 1) std::cout << "temp file Name: " << bgTempFileName << std::endl;
 
             // Bam output
             BamFileOut outBamFile(context(inFile), toCString(bgTempFileName));
@@ -986,7 +1000,7 @@ bool doIt(TOptions &options)
             }
         }
     }
-    std::cout << "Simulation of iCLIP reads finished succesfully. " << std::endl;
+    std::cout << "Simulation of iCLIP reads finished successfully. " << std::endl;
 
     return 0;
 }
