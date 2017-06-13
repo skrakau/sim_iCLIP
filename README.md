@@ -17,3 +17,6 @@ Requirements
  - C++14 compliant compiler
  - cmake 3.0 or newer
 
+# Documentation
+
+Please have a look at the [wiki](https://github.com/skrakau/sim_iCLIP/wiki).
