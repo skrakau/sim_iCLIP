@@ -78,6 +78,7 @@ struct AppOptions
     unsigned noBgCrosslinkSites;
     double bindingAffFactor;
     double bgTruncationRate;
+    double subsampleRate;
 
     bool ignoreTargetSites;
     unsigned numThreads;
@@ -104,6 +105,7 @@ struct AppOptions
         noBgCrosslinkSites(10), 
         bindingAffFactor(1.0/10.0),
         bgTruncationRate(0.6),
+        subsampleRate(0.01),
         ignoreTargetSites(false),
         numThreads(1),
         verbosity(1)
@@ -117,7 +119,7 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     // Setup ArgumentParser.
     ArgumentParser parser("sim_iclip");
     // Set short description, version, and date.
-    setShortDescription(parser, "Simulate iCLIP/eCLIP-seq data ");
+    setShortDescription(parser, "Simulate iCLIP/eCLIP-seq data");
     setVersion(parser, "1.0.0");
     setDate(parser, "Mai 2017");
 
@@ -161,7 +163,9 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     addOption(parser, ArgParseOption("ba", "ba", "Binding affinity for pull-down. Default: 1.0.", ArgParseArgument::DOUBLE));
     setMinValue(parser, "ba", "0.005");
     setMaxValue(parser, "ba", "1.0");
-
+    addOption(parser, ArgParseOption("otr", "otr", "Off-target truncation rate (within simulated fragment length; also used for background binding). Default: 0.1.", ArgParseArgument::DOUBLE));
+    setMinValue(parser, "otr", "0.01");
+    setMaxValue(parser, "otr", "0.9");
 
     // Background noise
     addSection(parser, "Options for simulating background noise");
@@ -212,6 +216,7 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     getOptionValue(options.bindingAffFactor, parser, "baf");
 
     getOptionValue(options.truncationRate, parser, "tr");
+    getOptionValue(options.otherTruncationRate, parser, "otr");
     getOptionValue(options.noCrosslinkSites, parser, "cs");
     if (isSet(parser, "urc"))
         options.useRnCrosslinkSites = true;
