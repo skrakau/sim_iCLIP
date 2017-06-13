@@ -3,7 +3,7 @@
 Clone the repository
 
     $ git clone https://github.com/skrakau/sim_iCLIP.git
-    $ cd PureCLIP
+    $ cd sim_iCLIP
 
 Create a build directory, configure the build and compile
 
