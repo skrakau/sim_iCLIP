@@ -76,11 +76,17 @@ struct Stats
     unsigned bsCount;
     unsigned uncoveredBsCount;
     unsigned readCount;
+    unsigned targetTruncCount;
+    unsigned offTargetTruncCount;
+    unsigned randomReadCount;
 
     Stats() :
         bsCount(0),
         uncoveredBsCount(0),
-        readCount(0)
+        readCount(0),
+        targetTruncCount(0),
+        offTargetTruncCount(0),
+        randomReadCount(0)       
     {}
 };
 
@@ -194,23 +200,23 @@ bool simulatePotentialCrosslinkSites(BindingSite &bindingSite, unsigned c, TRng 
 
 
 template<typename TOptions>
-bool adjustBamRecord(BamAlignmentRecord &newRecord, unsigned l, TOptions &options)
+bool adjustBamRecord(BamAlignmentRecord &newRecord, unsigned readLen, unsigned fragLen, TOptions &options)
 {
-    if (l < options.mincDNAlength || l > options.maxcDNAlength)
+    if (fragLen < options.mincDNAlength || fragLen > options.maxcDNAlength)
         return false;
 
     // make sure sequence cannot be used for mapping accidentally later
     clear(newRecord.seq);
-    resize(newRecord.seq, l, 'A', Exact());
+    resize(newRecord.seq, readLen, 'A', Exact());
 
     clear(newRecord.qual);
-    resize(newRecord.qual, l, '<', Exact());        // phred 60
+    resize(newRecord.qual, readLen, '<', Exact());        // phred 60
 
     // set to only matches
     clear(newRecord.cigar);
     CigarElement<> cigarEl;
     cigarEl.operation = 'M';
-    cigarEl.count = l;
+    cigarEl.count = readLen;
     appendValue(newRecord.cigar, cigarEl);
 
     return true;
@@ -218,14 +224,14 @@ bool adjustBamRecord(BamAlignmentRecord &newRecord, unsigned l, TOptions &option
 
 
 template<typename TRng, typename TOptions>
-bool apply_iCLIPmodifications(BamAlignmentRecord &newRecord, BamAlignmentRecord &record, BindingSite &bindingSite, unsigned l, TRng &rng, bool isTarget, TOptions &options)
+bool apply_iCLIPmodifications(Stats &stats, BamAlignmentRecord &newRecord, BamAlignmentRecord &record, BindingSite &bindingSite, unsigned fragLen, TRng &rng, bool isTarget, TOptions &options)
 {
     newRecord = record;
-    unsigned fragEndPos;
+    unsigned fragEndPos;    // 3'end
     if (!hasFlagRC(record))
-        fragEndPos = record.beginPos + l;
+        fragEndPos = record.beginPos + fragLen;
     else
-        fragEndPos = record.beginPos + getAlignmentLengthInRef(record) - l;
+        fragEndPos = record.beginPos + getAlignmentLengthInRef(record) - fragLen;
 
     // early RT stop caused by other footprints (uniform distribution)
     std::uniform_real_distribution<double> distEvent(0, 1);
@@ -244,7 +250,7 @@ bool apply_iCLIPmodifications(BamAlignmentRecord &newRecord, BamAlignmentRecord 
                 if (bindingSite.endPos <= fragEndPos)
                     bsBuffer = bindingSite.endPos - bindingSite.beginPos;
                 else if (bindingSite.beginPos <= fragEndPos) 
-                    bsBuffer = record.beginPos + l - bindingSite.beginPos;  
+                    bsBuffer = record.beginPos + fragLen - bindingSite.beginPos;  
             }
             else
             {
@@ -255,7 +261,7 @@ bool apply_iCLIPmodifications(BamAlignmentRecord &newRecord, BamAlignmentRecord 
             }
         }      
         // draw position using length of area to sample from
-        std::uniform_int_distribution<int> distPos(0, l - bsBuffer); // NOTE use full length (extend over current length if necessary)
+        std::uniform_int_distribution<int> distPos(0, fragLen - bsBuffer); // NOTE use full length (extend over current length if necessary)
         unsigned x1 = distPos(rng);
         // project position to fragment
         if (!hasFlagRC(record))
@@ -265,13 +271,23 @@ bool apply_iCLIPmodifications(BamAlignmentRecord &newRecord, BamAlignmentRecord 
             else
                 newRecord.beginPos = record.beginPos + bsBuffer + x1;
 
+            unsigned newFragLen = fragEndPos - newRecord.beginPos;
+            unsigned readLen = std::min(options.simReadLength, newFragLen);
             // shorten sequences, qualities, adjust cigar, sequence invalid "AAAAA..."
-            if (!adjustBamRecord(newRecord, (fragEndPos-newRecord.beginPos), options))
-                return false;  
+            if(adjustBamRecord(newRecord, readLen, newFragLen, options))
+            {
+                SEQAN_OMP_PRAGMA(atomic)
+                ++stats.offTargetTruncCount;
+                return true; 
+            }
+            else
+            {
+                return false;
+            }
         }      
         else
         {
-            unsigned newEndPos;
+            unsigned newEndPos; // read end pos
             if (x1 < (record.beginPos + getAlignmentLengthInRef(record) - bindingSite.endPos))  
                 newEndPos = record.beginPos + getAlignmentLengthInRef(record) - x1;  
             else
@@ -282,12 +298,20 @@ bool apply_iCLIPmodifications(BamAlignmentRecord &newRecord, BamAlignmentRecord 
             else                                                            // at end of fragment, shorter read
                 newRecord.beginPos = fragEndPos;
 
+            unsigned newFragLen = newEndPos - fragEndPos;
+            unsigned readLen = newEndPos-newRecord.beginPos;
             // shorten sequences, qualities, adjust cigar, sequence invalid "AAAAA..."
-            if(!adjustBamRecord(newRecord, (newEndPos-newRecord.beginPos), options))
-                return false;  
+            if (adjustBamRecord(newRecord, readLen, newFragLen, options))
+            {
+                SEQAN_OMP_PRAGMA(atomic)
+                ++stats.offTargetTruncCount;
+                return true; 
+            }
+            else
+            {
+                return false;
+            }
         }      
-
-        return true;
     }
 
     // draw crosslink site(s) 
@@ -322,11 +346,21 @@ bool apply_iCLIPmodifications(BamAlignmentRecord &newRecord, BamAlignmentRecord 
         {
             newRecord.beginPos = crosslinkSite + 1;  
 
+            unsigned newFragLen = fragEndPos - newRecord.beginPos;
+            unsigned readLen = std::min(options.simReadLength, newFragLen);
             // shorten sequences, qualities, adjust cigar, sequence invalid "AAAAA..."
-            if (!adjustBamRecord(newRecord, (fragEndPos-newRecord.beginPos), options))
-                return false; 
+            if (adjustBamRecord(newRecord, readLen, newFragLen, options))    
+            {
+                SEQAN_OMP_PRAGMA(atomic)
+                ++stats.targetTruncCount;
+                return true; 
+            }
+            else
+            {
+                return false;
+            }
         }
-        else if (crosslinkSite < options.simReadLength)
+        else if (hasFlagRC(record) && (crosslinkSite < newRecord.beginPos + getAlignmentLengthInRef(record)))
         {
             unsigned newEndPos = crosslinkSite; 
 
@@ -335,13 +369,32 @@ bool apply_iCLIPmodifications(BamAlignmentRecord &newRecord, BamAlignmentRecord 
             else                                                            // at end of fragment, shorter read
                 newRecord.beginPos = fragEndPos;
 
+            unsigned newFragLen = newEndPos - fragEndPos;
+            unsigned readLen = newEndPos-newRecord.beginPos;
             // shorten sequences, qualities, adjust cigar, sequence invalid "AAAAA..."
-            if (!adjustBamRecord(newRecord, (newEndPos-newRecord.beginPos), options))
-                return false;  
+            if (adjustBamRecord(newRecord, readLen, newFragLen, options))
+            {
+                SEQAN_OMP_PRAGMA(atomic)
+                ++stats.targetTruncCount;
+                return true; 
+            }
+            else
+            {
+                return false;
+            }
         }
+        // if read does not cover crosslink site (but selected for truncation), keep untruncated !?
     }
-
-    return true;
+    
+    // adjust length if fragment shorter than read
+    unsigned readLen = std::min(options.simReadLength, fragLen);
+    if (hasFlagRC(record))          // adjust 3' end of read if necessary
+    {
+        newRecord.beginPos = record.beginPos + getAlignmentLengthInRef(record) - readLen;
+    }
+    // shorten sequences, qualities, adjust cigar, sequence invalid "AAAAA..."
+    return adjustBamRecord(newRecord, readLen, fragLen, options);                   // Note: size selection: ratio skewed! more loikely to be discarded than truncated cDNAs! 
+    //return true;                                                                  // adjust? ensure final reads have 0.1 untruncated? TODO
 }
 
 
@@ -517,7 +570,7 @@ bool process_bamRegion(Stats &stats, TBamOut &outBamFile, TBedOut &outBedFile1, 
         if (x <= bindingSite.bindingAffinity)
         {
             //std::cout << "binding affinity : " << bindingSite.bindingAffinity  << "\n";
-            if (apply_iCLIPmodifications(newBamRecord, bamRecord, bindingSite, l, rng, isTarget, options))
+            if (apply_iCLIPmodifications(stats, newBamRecord, bamRecord, bindingSite, l, rng, isTarget, options))
             {
                 writeRecord(outBamFile, newBamRecord);
 
@@ -573,10 +626,9 @@ bool process_bamRegion_subsample(Stats &stats, TBamOut &outBamFile, TBamIn &inFi
         if (bamRecord.rID == -1 || bamRecord.rID > rID || !hasFlagAllProper(bamRecord))
             break;
 
-        unsigned l = options.fragmentSize;
+        unsigned fragLen = options.fragmentSize;
         if (options.fldFileName != "")
-            l = draw_fragLength(fragLengthDistr, rng, options);
-
+            fragLen = draw_fragLength(fragLengthDistr, rng, options);
  
         if (!hasFlagFirst(bamRecord))
         {
@@ -587,18 +639,15 @@ bool process_bamRegion_subsample(Stats &stats, TBamOut &outBamFile, TBamIn &inFi
         // downSample corresponding to subsampling rate
         std::uniform_real_distribution<double> distBA(0.0, 1.0);
         double x = distBA(rng); 
-        if (x <= bindingSite.subsampleRate)
-        {
-                
-            newRecord = record;
-            unsigned fragEndPos;
-            if (!hasFlagRC(record))
-                fragEndPos = record.beginPos + l;
-            else
-                fragEndPos = record.beginPos + getAlignmentLengthInRef(record) - l;
+        if (x <= options.subsampleRate)
+        {                
+            newBamRecord = bamRecord;
 
-   
-
+            unsigned readLen = std::min(options.simReadLength, fragLen);
+            // shorten sequences, qualities, adjust cigar, sequence invalid "AAAAA..."
+            if (!adjustBamRecord(newBamRecord, readLen, fragLen, options))
+                return false;  
+  
             writeRecord(outBamFile, newBamRecord);
 
             SEQAN_OMP_PRAGMA(atomic)
@@ -811,6 +860,8 @@ bool doIt(TOptions &options)
     if (abort) return 1;
     std::cout << "****************************** "  << "\n";
     std::cout << "Simulated " << targetStats.readCount << " reads for " << targetStats.bsCount << " target binding sites." << "\n";
+    std::cout << "Simulated " << targetStats.targetTruncCount << " reads truncated at target crosslink sites. \n";
+    std::cout << "Simulated " << targetStats.offTargetTruncCount << " reads truncated at off-target sites. \n";
     std::cout << "No. of sites uncovered by raw RNA-seq data:  " << targetStats.uncoveredBsCount << " ." << "\n";
     std::cout << "****************************** "  << "\n";
 
@@ -906,16 +957,16 @@ bool doIt(TOptions &options)
                     ++backgroundStats.uncoveredBsCount;
                 }
             }
-
             // add random reads from RNA-seq data
-            process_bamRegion_subsample(backgroundStats, outBamFile, inFile, baiIndex, rID, fragLengthDistr, rng, options);
-
-
+            //process_bamRegion_subsample(backgroundStats, outBamFile, inFile, baiIndex, rID, fragLengthDistr, rng, options);
         }
         if (abort) return 1;
 
         std::cout << " Get max. threads " <<  omp_get_max_threads()  << std::endl;
         std::cout << "Simulated " << backgroundStats.readCount << " reads for " << backgroundStats.bsCount << " background binding sites." << "\n";
+        std::cout << "Simulated " << backgroundStats.targetTruncCount << " reads truncated at target crosslink sites. \n";
+        std::cout << "Simulated " << backgroundStats.offTargetTruncCount << " reads truncated at off-target sites. \n";
+        std::cout << "Subsampled " << backgroundStats.randomReadCount << "random reads from RNA-seq data.\n";
         std::cout << "No. of sites uncovered by raw RNA-seq data:  " << backgroundStats.uncoveredBsCount << " ." << "\n";
         std::cout << "****************************** "  << "\n";
     }
