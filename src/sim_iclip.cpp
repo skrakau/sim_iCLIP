@@ -118,7 +118,7 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     ArgumentParser parser("sim_iclip");
     // Set short description, version, and date.
     setShortDescription(parser, "Simulate iCLIP/eCLIP-seq data ");
-    setVersion(parser, "0.1");
+    setVersion(parser, "1.0.0");
     setDate(parser, "Mai 2017");
 
     // Define usage line and long description.
