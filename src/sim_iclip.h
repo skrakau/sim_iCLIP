@@ -553,7 +553,7 @@ bool process_bamRegion(Stats &stats, TBamOut &outBamFile, TBedOut &outBedFile1, 
 
         if (!hasFlagFirst(bamRecord))
         {
-            std::cerr << "ERROR: not the first segment! R2 entries should be removed from BAM before. " << "\n";
+            std::cerr << "WARNING: not the first segment! R2 entries should be removed from BAM before. " << "\n";
             continue;
         }
         if (std::abs(bamRecord.tLen) < options.minFragmentSize || std::abs(bamRecord.tLen) > options.maxFragmentSize)
