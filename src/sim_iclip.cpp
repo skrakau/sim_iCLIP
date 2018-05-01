@@ -99,11 +99,11 @@ struct AppOptions
         bindingAffinity(1.0),
         truncationRate(0.7),
         otherTruncationRate(0.1),   // early RT stop downstream of crosslink sites due to other reasons (other remaining footprints) 
-        noRTStopAtBs(true),        // no RT stop within binding site due to other reasons (than crosslink sites)
+        noRTStopAtBs(false),        // no RT stop within binding site due to other reasons (than crosslink sites)
         maxBSWidth(8),
         useBgBS(false),
         noBgCrosslinkSites(10), 
-        bindingAffFactor(1.0/10.0),
+        bindingAffFactor(0.005), // 0.1
         bgTruncationRate(0.6),
         subsampleRate(0.01),
         ignoreTargetSites(false),
@@ -176,8 +176,8 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     setMinValue(parser, "bcs", "1");
     setMaxValue(parser, "bcs", "50");
     addOption(parser, ArgParseOption("baf", "baf", "Factor to multiply background binding region score with to obtain binding affinity for pull-down.", ArgParseArgument::DOUBLE));
-    setMinValue(parser, "baf", "0.005");
-    setMaxValue(parser, "baf", "0.2");
+    setMinValue(parser, "baf", "0.0001");
+    setMaxValue(parser, "baf", "0.5");
     addOption(parser, ArgParseOption("btr", "btr", "Truncation rate for background binding regions.", ArgParseArgument::DOUBLE));
     setMinValue(parser, "btr", "0.0");
     setMaxValue(parser, "btr", "1.0");

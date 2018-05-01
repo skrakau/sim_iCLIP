@@ -551,11 +551,11 @@ bool process_bamRegion(Stats &stats, TBamOut &outBamFile, TBedOut &outBedFile1, 
                 continue;
         }
 
-        if (!hasFlagFirst(bamRecord))
+        /*if (!hasFlagFirst(bamRecord)) // currently assuming reads already selected
         {
             std::cerr << "WARNING: not the first segment! R2 entries should be removed from BAM before. " << "\n";
             continue;
-        }
+        }*/
         if (std::abs(bamRecord.tLen) < options.minFragmentSize || std::abs(bamRecord.tLen) > options.maxFragmentSize)
             continue;
         
@@ -630,11 +630,11 @@ bool process_bamRegion_subsample(Stats &stats, TBamOut &outBamFile, TBamIn &inFi
         if (options.fldFileName != "")
             fragLen = draw_fragLength(fragLengthDistr, rng, options);
  
-        if (!hasFlagFirst(bamRecord))
+        /*if (!hasFlagFirst(bamRecord)) // currently assuming reads already selected
         {
             std::cerr << "ERROR: not the first segment! R2 entries should be removed from BAM before. " << "\n";
             continue;
-        }       
+        }*/     
 
         // downSample corresponding to subsampling rate
         std::uniform_real_distribution<double> distBA(0.0, 1.0);
@@ -833,26 +833,28 @@ bool doIt(TOptions &options)
             int rID = 0;
             if (!getIdByName(rID, contigNamesCache(context(inFile)), store.contigNameStore[contigId]))
             {
-                std::cerr << "ERROR: Reference sequence named " << options.refFileName << " not known.\n";
-                abort = true; 
+                std::cerr << "WARNING: Reference sequence named " << store.contigNameStore[contigId] << " not known.\n";
+                //abort = true; 
             }
-
-            for (unsigned i = 0; i < length(bindingSites[contigId]); ++i)
+            else
             {
-                // number of crosslink sites 
-                unsigned c = options.noCrosslinkSites;
-                if (options.useRnCrosslinkSites)
+                for (unsigned i = 0; i < length(bindingSites[contigId]); ++i)
                 {
-                    std::uniform_int_distribution<unsigned> dist(1, options.noCrosslinkSites);
-                    c = dist(rng);
-                    c = std::min((bindingSites[contigId][i].endPos-bindingSites[contigId][i].beginPos), c); // make sure fitting within binding region
-                }
-                // simulate crosslink sites
-                simulatePotentialCrosslinkSites(bindingSites[contigId][i], c, rng, options);
-                if(!process_bamRegion(targetStats, outBamFile, outBedFile1, outBedFile2, inFile, baiIndex, rID, bindingSites[contigId][i], fragLengthDistr, rng, true, options))
-                {
-                    SEQAN_OMP_PRAGMA(atomic)
-                    ++targetStats.uncoveredBsCount;
+                    // number of crosslink sites 
+                    unsigned c = options.noCrosslinkSites;
+                    if (options.useRnCrosslinkSites)
+                    {
+                        std::uniform_int_distribution<unsigned> dist(1, options.noCrosslinkSites);
+                        c = dist(rng);
+                        c = std::min((bindingSites[contigId][i].endPos-bindingSites[contigId][i].beginPos), c); // make sure fitting within binding region
+                    }
+                    // simulate crosslink sites
+                    simulatePotentialCrosslinkSites(bindingSites[contigId][i], c, rng, options);
+                    if(!process_bamRegion(targetStats, outBamFile, outBedFile1, outBedFile2, inFile, baiIndex, rID, bindingSites[contigId][i], fragLengthDistr, rng, true, options))
+                    {
+                        SEQAN_OMP_PRAGMA(atomic)
+                            ++targetStats.uncoveredBsCount;
+                    }
                 }
             }
         }
@@ -934,27 +936,29 @@ bool doIt(TOptions &options)
             int rID = 0;
             if (!getIdByName(rID, contigNamesCache(context(inFile)), store.contigNameStore[contigId]))
             {
-                std::cerr << "ERROR: Reference sequence named " << options.refFileName << " not known.\n";
-                abort = true;
+                std::cerr << "WARNING: Reference sequence named " << store.contigNameStore[contigId] << " not known.\n";
+                //abort = true;
             }
-
-            for (unsigned i = 0; i < length(bgBindingSites[contigId]); ++i)
+            else
             {
-                // number of crosslink sites
-                // for the moment: make sure not less crosslink sites than for target sites (the fewer crosslink sites, the stronger signal at individual position)
-                unsigned c = options.noBgCrosslinkSites;
-                if (options.useRnCrosslinkSites)
+                for (unsigned i = 0; i < length(bgBindingSites[contigId]); ++i)
                 {
-                    std::uniform_int_distribution<unsigned> dist(options.noCrosslinkSites, options.noBgCrosslinkSites); 
-                    c = dist(rng);
-                    c = std::min((bgBindingSites[contigId][i].endPos-bgBindingSites[contigId][i].beginPos), c); // make sure fitting within binding region
-                }
-                // simulate crosslink sites
-                simulatePotentialCrosslinkSites(bgBindingSites[contigId][i], c, rng, options);
-                if(!process_bamRegion(backgroundStats, outBamFile, outBedFile3, outBedFile4, inFile, baiIndex, rID, bgBindingSites[contigId][i], fragLengthDistr, rng, false, options))
-                {
-                    SEQAN_OMP_PRAGMA(atomic)
-                    ++backgroundStats.uncoveredBsCount;
+                    // number of crosslink sites
+                    // for the moment: make sure not less crosslink sites than for target sites (the fewer crosslink sites, the stronger signal at individual position)
+                    unsigned c = options.noBgCrosslinkSites;
+                    if (options.useRnCrosslinkSites)
+                    {
+                        std::uniform_int_distribution<unsigned> dist(options.noCrosslinkSites, options.noBgCrosslinkSites); 
+                        c = dist(rng);
+                        c = std::min((bgBindingSites[contigId][i].endPos-bgBindingSites[contigId][i].beginPos), c); // make sure fitting within binding region
+                    }
+                    // simulate crosslink sites
+                    simulatePotentialCrosslinkSites(bgBindingSites[contigId][i], c, rng, options);
+                    if(!process_bamRegion(backgroundStats, outBamFile, outBedFile3, outBedFile4, inFile, baiIndex, rID, bgBindingSites[contigId][i], fragLengthDistr, rng, false, options))
+                    {
+                        SEQAN_OMP_PRAGMA(atomic)
+                            ++backgroundStats.uncoveredBsCount;
+                    }
                 }
             }
             // add random reads from RNA-seq data
