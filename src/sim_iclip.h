@@ -853,7 +853,7 @@ bool doIt(TOptions &options)
                     if(!process_bamRegion(targetStats, outBamFile, outBedFile1, outBedFile2, inFile, baiIndex, rID, bindingSites[contigId][i], fragLengthDistr, rng, true, options))
                     {
                         SEQAN_OMP_PRAGMA(atomic)
-                            ++targetStats.uncoveredBsCount;
+                        ++targetStats.uncoveredBsCount;
                     }
                 }
             }
