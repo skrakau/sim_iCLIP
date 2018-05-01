@@ -19,7 +19,7 @@ Requirements
 
 # Documentation
 
-Please have a look at the [wiki](https://github.com/skrakau/sim_iCLIP/wiki).
+Please have a look at the [wiki](https://github.com/skrakau/sim_iCLIP/wiki). **(erroneous, will be updated soon)**
 
 # Citation
 
