@@ -120,8 +120,8 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     ArgumentParser parser("sim_iclip");
     // Set short description, version, and date.
     setShortDescription(parser, "Simulate iCLIP/eCLIP-seq data");
-    setVersion(parser, "1.0.0");
-    setDate(parser, "Mai 2017");
+    setVersion(parser, "1.0.1");
+    setDate(parser, "Mai 2018");
 
     // Define usage line and long description.
     addUsageLine(parser, "[\\fIOPTIONS\\fP] <-bam \\fIBAM FILE\\fP> <-bai \\fIBAI FILE\\fP> <-ref \\fIGENOME FILE\\fP>  <-bs \\fIBINDING REGIONS FILE\\fP> <-out \\fIOUTPUT BAM FILE\\fP> ");
